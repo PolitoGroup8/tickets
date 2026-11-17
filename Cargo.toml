@@ -1,0 +1,26 @@
+[package]
+name = "wa2-group08-sales"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1.53", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+tokio-stream = { version = "0.1", features = ["sync"] }
+validator = { version = "0.21", features = ["derive"] }
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono",
+] }
+async-trait = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+# Used from part B: a PostgreSQL started by the tests themselves
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

@@ -1,0 +1,13 @@
+# Cargo
+/target/
+
+# Local environment: .env holds the database URL, commit .env.example instead
+.env
+
+# IDEs
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
