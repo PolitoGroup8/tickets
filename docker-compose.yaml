@@ -1,0 +1,75 @@
+
+# HOST PORT CONVENTIONS:
+#   - Axum services:       default port + 10
+#   - PostgreSQL:          default port + 5
+#   - Database management: default port + 5
+#
+# CONTAINER PORTS:
+#   - Axum:                3000
+#   - PostgreSQL:          5432
+#   - pgAdmin:             80
+
+name: group8-tickets
+
+services:
+
+  # Tickets microservice - Rust + Tokio + Axum
+  tickets:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tickets-api
+    ports:
+      - "3010:3000"
+    environment:
+      DATABASE_URL: postgres://tickets:tickets-dev-secret@postgres:5432/tickets
+      HOST: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Tickets database - PostgreSQL
+  postgres:
+    image: postgres:18
+    container_name: tickets-db
+    environment:
+      POSTGRES_USER: tickets
+      POSTGRES_PASSWORD: tickets-dev-secret
+      POSTGRES_DB: tickets
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data_tickets:/var/lib/postgresql
+      # Optional SQL initialization scripts:
+      # - ./seed:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets -d tickets"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Database administration - pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tickets-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin-dev-secret
+    ports:
+      - "8085:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ------------------------------------------------------------
+# Persistent volumes
+# ------------------------------------------------------------
+volumes:
+  postgres_data_tickets:
+  pgadmin_data:
