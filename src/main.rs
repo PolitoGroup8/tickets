@@ -4,6 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 
 mod config;
 mod db;
+mod service;
 
 
 #[tokio::main]
