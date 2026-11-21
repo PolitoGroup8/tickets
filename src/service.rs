@@ -1,6 +1,7 @@
 #[derive(serde::Deserialize)]
-struct OrderMessage {
-    data: PaidOrder,
+#[serde(tag = "type")]
+enum OrderMessage {
+    OrderPaid {data: PaidOrder}
 }
 
 #[derive(serde::Deserialize)]
@@ -117,7 +118,7 @@ mod tests {
         }"#;
 
         let event: OrderMessage = serde_json::from_str(json).expect("valid OrderPaid message");
-        let order = event.data;
+        let OrderMessage::OrderPaid { data: order } = event;
 
         assert_eq!(order.lines.len(), 2);
         assert_eq!(order.order_id, "ordine-1");
@@ -129,5 +130,30 @@ mod tests {
 
         assert_eq!(tickets.len(), 2);
         println!("{tickets:#?}");
+    }
+
+    #[test]
+    fn rejects_order_cancelled_message(){
+        let json = r#"{
+            "type": "OrderCancelled",
+            "version":1,
+            "data":{
+                "orderId": "ordine-1",
+                "customerId": "cliente-1",
+                "lines":[
+                    { 
+                        "orderLineId": "linea-1",
+                        "seatId": "seat-14",
+                        "seatLabel": "E14",
+                        "sectorId": "s1",
+                        "sector": "platea"
+                    }
+                ]
+            }
+        }"#;
+
+        let result = serde_json::from_str::<OrderMessage>(json);
+
+        assert!(result.is_err(), "OrderCancelled should be rejected");
     }
 }
