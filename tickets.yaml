@@ -1,0 +1,407 @@
+# yaml-language-server: $schema=https://spec.openapis.org/oas/3.1/schema/2022-10-07
+# Validate from wa2_milestones/: npx -y @redocly/cli@1.34.0 lint M2/materiale/openapi/tickets.yaml --skip-rule=no-empty-servers
+openapi: 3.1.0
+info:
+  title: Tickets and access service API
+  version: 0.1.0-m2
+
+tags:
+  - name: customer
+    description: Reading the caller's tickets
+  - name: gate
+    description: Admission at the entrance
+
+paths:
+  /api/v1/tickets:
+    get:
+      tags: [customer]
+      operationId: listTickets
+      summary: Lists customer tickets
+      description: Lists tickets owned by the customer. Can be filtered by orderId.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: query
+          description: Filter by order
+          schema: { type: string, minLength: 1, examples: [ord_01JD8W] }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of tickets
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketPage" }
+              examples:
+                oneTicket:
+                  value:
+                    items:
+                      - ticketId: tkt_01JD9A
+                        orderId: ord_01JD8W
+                        orderLineId: ol_1
+                        eventId: evt_01JC1A
+                        sessionId: ses_01JC4K
+                        seatId: seat_01JB7Q
+                        seatLabel: E14
+                        sectorId: sec_platea
+                        sector: Platea
+                        event: { eventTitle: Concerto X, startsAt: "2026-12-05T20:30:00Z", venueName: Teatro Y }
+                        status: UNSCANNED
+                        issuedAt: "2026-11-20T18:42:09Z"
+                        scannedAt: null
+                    nextCursor: cursor_tkt_01JD9A
+                    limit: 1
+                stillIssuing:
+                  summary: Order paid, tickets not issued yet
+                  value: { items: [], nextCursor: null, limit: 20 }
+        "400": { $ref: "#/components/responses/MalformedRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /api/v1/tickets/{ticketId}:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    get:
+      tags: [customer]
+      operationId: getTicket
+      summary: Gets a ticket
+      description: Returns a ticket and its entry credential. Only its owner can read it.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The ticket
+          headers:
+            Cache-Control:
+              description: Do not cache the credential
+              required: true
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketWithCredential" }
+              examples:
+                issued:
+                  value:
+                    ticketId: tkt_01JD9A
+                    orderId: ord_01JD8W
+                    orderLineId: ol_1
+                    eventId: evt_01JC1A
+                    sessionId: ses_01JC4K
+                    seatId: seat_01JB7Q
+                    seatLabel: E14
+                    sectorId: sec_platea
+                    sector: Platea
+                    event: { eventTitle: Concerto X, startsAt: "2026-12-05T20:30:00Z", venueName: Teatro Y }
+                    status: UNSCANNED
+                    issuedAt: "2026-11-20T18:42:09Z"
+                    scannedAt: null
+                    credential: tkt_01JD9A.k3J9vQ2mZr8wX1f6N4s7B0c5D2e9A8hL
+                scanned: { $ref: "#/components/examples/ScannedTicket" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/tickets/{ticketId}/scans:
+    parameters:
+      - $ref: "#/components/parameters/TicketId"
+    post:
+      tags: [gate]
+      operationId: scanTicket
+      summary: Scans a ticket
+      description: Checks a ticket and records entry. Only GATE_STAFF can call this endpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScanRequest" }
+            examples:
+              gateA:
+                value: { scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13, sessionId: ses_01JC4K, credential: tkt_01JD9A.k3J9vQ2mZr8wX1f6N4s7B0c5D2e9A8hL, gate: A }
+      responses:
+        "201":
+          description: Admitted. The ticket is now SCANNED.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanResult" }
+              examples:
+                admitted: { $ref: "#/components/examples/Admitted" }
+        "200":
+          description: Previous scan result; replayed=true means no new entry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanResult" }
+              examples:
+                replay: { $ref: "#/components/examples/ReplayedScan" }
+        "400": { $ref: "#/components/responses/MalformedRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Ticket already scanned, revoked or for another session
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                used:
+                  value:
+                    type: https://tickets.example.com/problems/ticket-already-used
+                    title: Ticket already used
+                    status: 409
+                    detail: Ticket tkt_01JD9A was admitted at gate A at 2026-12-05T19:58:31Z.
+                    code: ticket-already-used
+                    firstAdmittedAt: "2026-12-05T19:58:31Z"
+                    scanId: 1adcd10b-8b8b-40a9-9f5d-667d16152adc
+                    replayed: false
+                revoked:
+                  value: { type: "https://tickets.example.com/problems/ticket-revoked", title: Ticket revoked, status: 409, code: ticket-revoked, scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13, replayed: false }
+                wrongSession:
+                  value: { type: "https://tickets.example.com/problems/session-mismatch", title: Wrong session, status: 409, code: session-mismatch, scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13, replayed: false }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "422":
+          description: Invalid input or scanId reused with different data
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                invalidCredential:
+                  value: { type: "https://tickets.example.com/problems/invalid-credential", title: Invalid credential, status: 422, code: invalid-credential, scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13, replayed: false }
+                reusedScanId:
+                  value: { type: "https://tickets.example.com/problems/scan-id-reuse", title: Scan ID reused, status: 422, code: scan-id-reuse, detail: This scanId was used for a different ticket or body. }
+                validation:
+                  value: { type: "https://tickets.example.com/problems/validation", title: Validation failed, status: 422, code: validation, errors: [{ field: sessionId, message: A non-empty session identifier is required. }] }
+        "503":
+          description: Service unavailable; retry with the same scanId and body
+          headers:
+            Retry-After:
+              description: Seconds before retrying
+              schema: { type: integer, minimum: 1, example: 2 }
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              example: {"type":"https://tickets.example.com/problems/tickets-unavailable","title":"tickets unavailable","status":503,"code":"tickets-unavailable"}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by Keycloak. Roles CUSTOMER, ORGANIZER, GATE_STAFF.
+
+  parameters:
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      description: Opaque id of the ticket
+      schema: { type: string, minLength: 1, examples: [tkt_01JD9A] }
+    Limit:
+      name: limit
+      in: query
+      description: Items in the page. Default 20, maximum 100.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: The nextCursor of the previous page.
+      schema: { type: string }
+
+  schemas:
+    Ticket:
+      description: One ticket per (orderId, orderLineId); immutable order, session, seat and event display snapshot. Customer ownership comes from OrderPaid, never query/body fields.
+      type: object
+      required: [ticketId, orderId, orderLineId, eventId, sessionId, seatId, seatLabel, sectorId, sector, event, status, issuedAt, scannedAt]
+      properties:
+        ticketId: { type: string }
+        orderId: { type: string }
+        orderLineId: { type: string }
+        eventId: { type: string }
+        sessionId: { type: string }
+        seatId: { type: string }
+        seatLabel: { type: string }
+        sectorId: { type: string }
+        sector: { type: string }
+        event:
+          description: Display data copied from OrderPaid
+          type: object
+          required: [eventTitle, startsAt, venueName]
+          properties:
+            eventTitle: { type: string }
+            startsAt: { type: string, format: date-time }
+            venueName: { type: string }
+        status:
+          description: UNSCANNED at issuance; SCANNED after the first successful conditional admission. SCANNED and REVOKED never admit again. Revocation of an unscanned ticket is coordinated with cancellation in M4a.
+          type: string
+          enum: [UNSCANNED, SCANNED, REVOKED]
+        issuedAt: { type: string, format: date-time }
+        scannedAt: { type: [string, "null"], format: date-time, description: Server time of the first admission; null while UNSCANNED or REVOKED }
+
+    TicketWithCredential:
+      description: Owner-only detail; credential is non-null for UNSCANNED and null for SCANNED or REVOKED. Responses containing this representation use Cache-Control no-store.
+      allOf:
+        - $ref: "#/components/schemas/Ticket"
+        - type: object
+          required: [credential]
+          properties:
+            credential:
+              description: Non-guessable secret encoded in the QR code; shown only to the owner while UNSCANNED
+              type: [string, "null"]
+              minLength: 32
+              maxLength: 512
+
+    TicketPage:
+      type: object
+      required: [items, nextCursor, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Ticket" }
+        nextCursor: { type: [string, "null"], description: Opaque. Null on the last page. }
+        limit: { type: integer }
+
+    ScanRequest:
+      description: One presentation. Staff identity comes from JWT sub; the scanner cannot set ticket status, admission time or another staff subject.
+      type: object
+      additionalProperties: false
+      required: [scanId, sessionId, credential, gate]
+      properties:
+        scanId:
+          description: Generated by the scanner for one presentation, reused on its retries
+          type: string
+          minLength: 8
+          maxLength: 64
+        sessionId: { type: string, minLength: 1, description: Session currently served by the gate; must equal the stored ticket session }
+        credential: { type: string, minLength: 32, maxLength: 512, description: Read from the QR code; never logged or stored verbatim in scan history }
+        gate: { type: string, minLength: 1, maxLength: 100, description: Entrance label recorded for audit; not authorization evidence }
+
+    ScanResult:
+      description: Receipt of the single admission associated with scanId. replayed=true only confirms that stored receipt; the scanner must not open its gate again for that presentation.
+      type: object
+      required: [scanId, ticketId, sessionId, result, admittedAt, gate, replayed]
+      properties:
+        scanId: { type: string }
+        ticketId: { type: string }
+        sessionId: { type: string }
+        result: { type: string, const: ADMITTED }
+        admittedAt: { type: string, format: date-time }
+        gate: { type: string }
+        replayed: { type: boolean, description: False for the first committed admission (201); true for its identical replay (200) }
+
+    Problem:
+      description: RFC 9457 problem document, the same in every service
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          description: https://tickets.example.com/problems/{code}
+          type: string
+          format: uri
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code:
+          description: Stable machine-readable code, also the last segment of `type`
+          type: string
+          examples: [ticket-already-used]
+        firstAdmittedAt:
+          description: Only for `ticket-already-used`
+          type: string
+          format: date-time
+        scanId:
+          description: Present for a recorded scan decision; belongs to the authenticated staff subject
+          type: string
+        replayed:
+          description: Present for recorded business denials; true on their identical retry
+          type: boolean
+        errors:
+          description: Present for `validation`; one entry per invalid field
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+  responses:
+    MalformedRequest:
+      description: "`malformed-request`: the body, query or path cannot be parsed"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/malformed-request","title":"malformed request","status":400,"code":"malformed-request"}
+    Unauthenticated:
+      description: "`unauthenticated`: missing, expired or invalid token"
+      headers:
+        WWW-Authenticate:
+          description: Bearer challenge; invalid_token for expired or invalid credentials
+          schema: { type: string, example: 'Bearer error="invalid_token"' }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/unauthenticated","title":"unauthenticated","status":401,"code":"unauthenticated"}
+    Forbidden:
+      description: "`forbidden`: the token lacks the required role"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/forbidden","title":"forbidden","status":403,"code":"forbidden"}
+    NotFound:
+      description: "`not-found`: no such ticket, or it belongs to someone else"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/not-found","title":"not found","status":404,"code":"not-found"}
+    UnsupportedMediaType:
+      description: "`unsupported-media-type`: the body is not application/json"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/unsupported-media-type","title":"unsupported media type","status":415,"code":"unsupported-media-type"}
+    ValidationFailed:
+      description: "`validation`: a value cannot be processed; see `errors`"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+          example: {"type":"https://tickets.example.com/problems/validation","title":"validation","status":422,"code":"validation","errors":[{"field":"limit","message":"Use an integer between 1 and 100."}]}
+
+  examples:
+    ScannedTicket:
+      value:
+        ticketId: tkt_01JD9A
+        orderId: ord_01JD8W
+        orderLineId: ol_1
+        eventId: evt_01JC1A
+        sessionId: ses_01JC4K
+        seatId: seat_01JB7Q
+        seatLabel: E14
+        sectorId: sec_platea
+        sector: Platea
+        event: { eventTitle: Concerto X, startsAt: "2026-12-05T20:30:00Z", venueName: Teatro Y }
+        status: SCANNED
+        issuedAt: "2026-11-20T18:42:09Z"
+        scannedAt: "2026-12-05T19:58:31Z"
+        credential: null
+    Admitted:
+      value:
+        scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13
+        ticketId: tkt_01JD9A
+        sessionId: ses_01JC4K
+        result: ADMITTED
+        admittedAt: "2026-12-05T19:58:31Z"
+        gate: A
+        replayed: false
+    ReplayedScan:
+      value:
+        scanId: 9d3f1b2a-7c4e-4f6a-8b1d-2e5c7a9f0b13
+        ticketId: tkt_01JD9A
+        sessionId: ses_01JC4K
+        result: ADMITTED
+        admittedAt: "2026-12-05T19:58:31Z"
+        gate: A
+        replayed: true
