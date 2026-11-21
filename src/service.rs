@@ -1,4 +1,9 @@
 #[derive(serde::Deserialize)]
+struct OrderMessage {
+    data: PaidOrder,
+}
+
+#[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PaidOrder {
     order_id: String,
@@ -99,15 +104,20 @@ mod tests {
     #[test]
     fn reads_paid_order_lines_from_json() {
         let json = r#"{
-            "orderId":"ordine-1",
-            "customerId":"cliente-1",
-            "lines":[
-                { "orderLineId": "line-1", "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
-                { "orderLineId": "line-2", "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
-            ]
+            "type": "OrderPaid",
+            "version": 1,
+            "data":{
+                "orderId":"ordine-1",
+                "customerId":"cliente-1",
+                "lines":[
+                    { "orderLineId": "line-1", "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
+                    { "orderLineId": "line-2", "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
+                ]
+            }
         }"#;
 
-        let order: PaidOrder = serde_json::from_str(json).expect("valid order data");
+        let event: OrderMessage = serde_json::from_str(json).expect("valid OrderPaid message");
+        let order = event.data;
 
         assert_eq!(order.lines.len(), 2);
         assert_eq!(order.order_id, "ordine-1");
