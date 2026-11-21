@@ -29,14 +29,12 @@ enum TicketStatus {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct NewTicket {
+pub(crate) struct NewTicket {
     order_line_id: String,
     seat_id: String,
     seat_label: String,
-
     sector_id: String,
     sector_name: String,
-
     status: TicketStatus,
 }
 
@@ -53,6 +51,13 @@ fn issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
             status: TicketStatus::Unscanned,
         })
         .collect()
+}
+
+pub(crate) fn issue_tickets_from_message(
+    body: &[u8],
+) -> Result<Vec<NewTicket>, serde_json::Error> {
+    let OrderMessage::OrderPaid { data } = serde_json::from_slice(body)?;
+    Ok(issue_tickets(data))
 }
 
 #[cfg(test)]
