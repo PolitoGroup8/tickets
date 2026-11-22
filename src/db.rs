@@ -12,7 +12,7 @@ pub fn migration_failure(e: &MigrateError) -> String {
     let MigrateError::ExecuteMigration(sqlx::Error::Database(db), version) = e else {
         return e.to_string();
     };
-    let detail = db.try_downcast_ref::<PgDatabaseError>().and_then(|pg| pg.detail()).unwrap_or("");
+    let detail: &str = db.try_downcast_ref::<PgDatabaseError>().and_then(|pg| pg.detail()).unwrap_or("");
     format!("migration {version}: {}\n{detail}", db.message())
 }
 

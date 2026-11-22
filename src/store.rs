@@ -62,6 +62,7 @@ impl PgTickets {
 
 #[async_trait]
 impl TicketRepository for PgTickets {
+    
     async fn begin(&self) -> Result<Box<dyn TicketTransaction>, StoreError> {
         let tx = self.pool.begin().await?;
 
