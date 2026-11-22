@@ -18,7 +18,7 @@ pub(crate) async fn connect() -> Result<Connection, Box<dyn std::error::Error + 
     Ok(Connection::connect_uri(uri, ConnectionProperties::default()).await?)
 }
 
-pub(crate) async fn consume_demo_queue(connection: &Connection) -> lapin::Result<()> {
+pub(crate) async fn consume_queue_message(connection: &Connection) -> lapin::Result<()> {
     let queue = "tickets.order-paid";
     let channel = connection.create_channel().await?;
 
@@ -44,6 +44,8 @@ pub(crate) async fn consume_demo_queue(connection: &Connection) -> lapin::Result
     while let Some(delivery) = consumer.next().await{
         let delivery = delivery?;
 
+        // STORAGE NEL DB
+
         match crate::service::issue_tickets_from_message(&delivery.data){
             Ok(tickets) => {
                 println!("{tickets:#?}");
@@ -54,6 +56,8 @@ pub(crate) async fn consume_demo_queue(connection: &Connection) -> lapin::Result
                 delivery.reject(BasicRejectOptions{requeue:false}).await?;
             }
         }
+
+        // I TICKET GENERATI LI RIMANDIAMO SULLA CODA
     }
 
     Ok(())

@@ -1,5 +1,5 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TicketStatus {
@@ -10,7 +10,7 @@ pub enum TicketStatus {
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum OrderMessage {
-    OrderPaid {data: PaidOrder}
+    OrderPaid { data: PaidOrder },
 }
 
 #[derive(Deserialize)]
@@ -18,6 +18,9 @@ pub enum OrderMessage {
 pub struct PaidOrder {
     pub(crate) order_id: String,
     pub(crate) customer_id: String,
+    pub(crate) customer_email: String,
+    pub(crate) customer_name: Option<String>,
+    pub(crate) event: EventSnapshot,
     pub(crate) lines: Vec<PaidOrderLine>,
 }
 
@@ -43,3 +46,13 @@ pub(crate) struct NewTicket {
     pub(crate) status: TicketStatus,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EventSnapshot {
+    pub(crate) event_id: String,
+    pub(crate) session_id: String,
+    pub(crate) event_title: String,
+    pub(crate) starts_at: DateTime<Utc>,
+    pub(crate) venue_name: String,
+    pub(crate) venue_city: String,
+}

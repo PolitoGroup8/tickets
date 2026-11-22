@@ -57,7 +57,7 @@ async fn main() {
     print!("Connected to RabbitMQ");
 
     tokio::spawn(async move {
-        if let Err(err) = rabbitmq::consume_demo_queue(&rabbitmq_connection).await {
+        if let Err(err) = rabbitmq::consume_queue_message(&rabbitmq_connection).await {
             eprintln!("RabbitMQ consumer stopped: {err}");
         }
     });

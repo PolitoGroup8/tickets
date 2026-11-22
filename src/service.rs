@@ -15,26 +15,34 @@ fn issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
         .collect()
 }
 
-pub(crate) fn issue_tickets_from_message(
-    body: &[u8],
-) -> Result<Vec<NewTicket>, serde_json::Error> {
+pub(crate) fn issue_tickets_from_message(body: &[u8]) -> Result<Vec<NewTicket>, serde_json::Error> {
     let OrderMessage::OrderPaid { data } = serde_json::from_slice(body)?;
     Ok(issue_tickets(data))
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use crate::domain::PaidOrderLine;
+    use chrono::{DateTime, Utc};
 
-use super::*;
+    use crate::domain::{EventSnapshot, PaidOrderLine};
+
+    use super::*;
 
     #[test]
     fn creates_one_unscanned_ticket_per_order_line() {
         let order = PaidOrder {
             order_id: "ordine-1".into(),
             customer_id: "cliente-1".into(),
+            customer_email: "prova@prova.it".into(), // TODO: ricordarci di validare da qualche parte
+            customer_name: None,
+            event: EventSnapshot {
+                event_id: "event-1".into(),
+                session_id: "session-1".into(),
+                event_title: "titolo-1".into(),
+                starts_at: Utc::now(),
+                venue_name: "venue-1".into(),
+                venue_city: "torino-1".into(),
+            },
             lines: vec![
                 PaidOrderLine {
                     order_line_id: "line-1".into(),
@@ -81,6 +89,15 @@ use super::*;
             "data":{
                 "orderId":"ordine-1",
                 "customerId":"cliente-1",
+                "customerEmail": "customer@example.test",
+                "event": {
+                    "eventId": "evt_test",
+                    "sessionId": "ses_test",
+                    "eventTitle": "Concerto",
+                    "startsAt": "2026-12-10T20:00:00Z",
+                    "venueName": "Teatro",
+                    "venueCity": "Torino"
+                },
                 "lines":[
                     { "orderLineId": "line-1", "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
                     { "orderLineId": "line-2", "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
@@ -104,7 +121,7 @@ use super::*;
     }
 
     #[test]
-    fn rejects_order_cancelled_message(){
+    fn rejects_order_cancelled_message() {
         let json = r#"{
             "type": "OrderCancelled",
             "version":1,

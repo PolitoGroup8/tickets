@@ -194,11 +194,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_and_retrieve_tickets() {
-        let pool = PgPool::connect(
-            "postgres://user:password@localhost:5432/TICKETS"
-        )
-        .await
-        .unwrap();
+        let pool = PgPool::connect("postgres://user:password@localhost:5432/TICKETS")
+            .await
+            .unwrap();
 
         let repository = PgTickets::new(pool);
 
@@ -213,15 +211,13 @@ mod tests {
             venue_city: "Milan".into(),
             customer_email: "test@example.com".into(),
             customer_name: Some("Test User".into()),
-            lines: vec![
-                OrderLine {
-                    order_line_id: "line-001".into(),
-                    seat_id: "seat-001".into(),
-                    seat_label: "A1".into(),
-                    sector_id: "sector-001".into(),
-                    sector_name: "VIP".into(),
-                },
-            ],
+            lines: vec![OrderLine {
+                order_line_id: "line-001".into(),
+                seat_id: "seat-001".into(),
+                seat_label: "A1".into(),
+                sector_id: "sector-001".into(),
+                sector_name: "VIP".into(),
+            }],
         };
 
         let mut tx = repository.begin().await.unwrap();
@@ -249,5 +245,60 @@ mod tests {
             .unwrap();
 
         assert!(ticket.is_some());
+    }
+
+    #[tokio::test]
+    async fn order_paid_persists_two_tickets() {
+        use testcontainers_modules::{
+            postgres::Postgres as PostgresImage,
+            testcontainers::{ImageExt, runners::AsyncRunner},
+        };
+
+        let db = PostgresImage::default()
+            .with_tag("17")
+            .start()
+            .await
+            .unwrap();
+        let host = db.get_host().await.unwrap();
+        let port = db.get_host_port_ipv4(5432).await.unwrap();
+        let database_url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        crate::db::migrator().run(&pool).await.unwrap();
+        let repository = PgTickets::new(pool);
+
+        let payload = br#"{
+            "type": "OrderPaid",
+            "version": 1,
+            "data": {
+                "orderId": "ordine_test",
+                "customerId": "customer_test",
+                "customerEmail": "customer@example.test",
+                "eventId": "evt_test",
+                "sessionId": "ses_test",
+                "event": {
+                    "eventTitle": "Concerto",
+                    "startsAt": "2026-12-10T20:00:00Z",
+                    "venueName": "Teatro",
+                    "venueCity": "Torino"
+                },
+                "lines": [
+                    {"orderLineId":"ol_1","seatId":"seat_14","seatLabel":"E14","sectorId":"s1","sector":"Platea"},
+                    {"orderLineId":"ol_2","seatId":"seat_15","seatLabel":"E15","sectorId":"s1","sector":"Platea"}
+                ]
+            }
+        }"#;
+
+        let generated = crate::service::issue_tickets_from_message(payload).unwrap();
+        assert_eq!(generated.len(), 2);
+
+        let persisted = repository
+            .find_by_order_id("ordine_test")
+            .await
+            .unwrap()
+            .expect("OrderPaid must persist tickets");
+
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].meta_id, persisted[1].meta_id);
+        assert!(persisted.iter().all(|ticket| ticket.status == "UNSCANNED"));
     }
 }
