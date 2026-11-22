@@ -129,9 +129,6 @@ impl From<ValidationErrors> for AppError {
     }
 }
 
-/// A JSON body that has passed its `#[validate(...)]` rules (L16, slides 15-16). Its rejection
-/// is an `AppError`: a body that cannot be read is a 400, as with `Json`, and a body that breaks
-/// some rules is a 422 that lists all of them.
 pub struct ValidatedJson<T>(pub T);
 
 impl<S, T> FromRequest<S> for ValidatedJson<T>
@@ -160,12 +157,10 @@ impl From<PathRejection> for AppError {
     }
 }
 
-/// The answer to a path that matches no route.
 pub async fn no_route() -> AppError {
     AppError::NotFound("no resource at this path".to_string())
 }
 
-/// The answer to a known path called with a method it does not support.
 pub async fn wrong_method() -> AppError {
     AppError::Other(StatusCode::METHOD_NOT_ALLOWED, "method not supported on this path".to_string())
 }

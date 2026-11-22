@@ -16,10 +16,11 @@ dotenvy = "0.15"
 tokio-stream = { version = "0.1", features = ["sync"] }
 validator = { version = "0.21", features = ["derive"] }
 sqlx = { version = "0.9", default-features = false, features = [
-    "runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono",
+    "runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono", "uuid"
 ] }
 async-trait = "0.1"
 lapin = "4"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
