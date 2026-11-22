@@ -11,10 +11,19 @@ mod service;
 mod store;
 
 
+// psql -h localhost -p 5432 -U user -d TICKETS
+
 #[tokio::main]
 async fn main() {
     
     let _ = dotenvy::dotenv();
+    
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .init();
 
     let cfg = match config::Config::from_env() {
         Ok(cfg) => cfg,
@@ -24,13 +33,6 @@ async fn main() {
         }
     };
 
-    /* 
-    let rabbitmq_connection = rabbitmq::connect().await.unwrap_or_else(|err| {
-        eprint!("Cannot connect to RabbitMQ: {err}");
-        std::process::exit(1);
-    });
-    print!("Connected to RabbitMQ");
-    */
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -41,6 +43,15 @@ async fn main() {
             eprintln!("cannot connect to the database: {err}");
             std::process::exit(1);
         });
+
+    if let Err(e) = db::migrator().run(&pool).await {
+        eprintln!("the migrations failed: {}", db::migration_failure(&e));
+        std::process::exit(1);
+    }
+    match db::schema_version(&pool).await {
+        Ok(version) => tracing::info!("migrations checked, the database is at version {version}"),
+        Err(e) => tracing::warn!("cannot read the version of the database: {e}"),
+    }
 
     let app = Router::new()
         .route("/health", get(health))
