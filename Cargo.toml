@@ -19,6 +19,7 @@ sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "chrono",
 ] }
 async-trait = "0.1"
+lapin = "4"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
