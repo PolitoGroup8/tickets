@@ -101,7 +101,7 @@ impl TicketRepository for PgTickets {
                       to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS issued_at,
                       status
                FROM ticket
-               WHERE ticket_id = $1"#,
+               WHERE ticket_id = $1::UUID"#,
         )
         .bind(ticket_id)
         .fetch_optional(&self.pool)
@@ -184,5 +184,70 @@ impl TicketTransaction for PgTransaction {
         self.tx.commit().await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[tokio::test]
+    async fn test_save_and_retrieve_tickets() {
+        let pool = PgPool::connect(
+            "postgres://user:password@localhost:5432/TICKETS"
+        )
+        .await
+        .unwrap();
+
+        let repository = PgTickets::new(pool);
+
+        let order = Order {
+            order_id: "test-order-001".into(),
+            customer_id: "customer-001".into(),
+            event_id: "event-001".into(),
+            event_title: "Test Concert".into(),
+            session_id: "session-001".into(),
+            session_starts_at: Utc.with_ymd_and_hms(2026, 12, 10, 20, 0, 0).unwrap(),
+            venue_name: "Test Arena".into(),
+            venue_city: "Milan".into(),
+            customer_email: "test@example.com".into(),
+            customer_name: Some("Test User".into()),
+            lines: vec![
+                OrderLine {
+                    order_line_id: "line-001".into(),
+                    seat_id: "seat-001".into(),
+                    seat_label: "A1".into(),
+                    sector_id: "sector-001".into(),
+                    sector_name: "VIP".into(),
+                },
+            ],
+        };
+
+        let mut tx = repository.begin().await.unwrap();
+
+        tx.save_order(&order).await.unwrap();
+
+        for line in &order.lines {
+            tx.save_ticket(line).await.unwrap();
+        }
+
+        tx.commit().await.unwrap();
+
+        let tickets = repository
+            .find_by_order_id(&order.order_id)
+            .await
+            .unwrap()
+            .expect("Tickets not found");
+
+        assert_eq!(tickets.len(), 1);
+        assert_eq!(tickets[0].seat_label, "A1");
+
+        let ticket = repository
+            .find_by_ticket_id(&tickets[0].ticket_id)
+            .await
+            .unwrap();
+
+        assert!(ticket.is_some());
     }
 }
