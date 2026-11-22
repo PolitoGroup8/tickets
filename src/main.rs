@@ -4,7 +4,8 @@ use sqlx::postgres::PgPoolOptions;
 
 mod config;
 mod db;
-
+mod store;
+mod repository;
 
 #[tokio::main]
 async fn main() {
