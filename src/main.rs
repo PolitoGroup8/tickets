@@ -5,6 +5,7 @@ use sqlx::postgres::PgPoolOptions;
 mod config;
 mod db;
 mod domain;
+mod errors;
 mod repository;
 mod service;
 mod store;
@@ -22,6 +23,14 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    /* 
+    let rabbitmq_connection = rabbitmq::connect().await.unwrap_or_else(|err| {
+        eprint!("Cannot connect to RabbitMQ: {err}");
+        std::process::exit(1);
+    });
+    print!("Connected to RabbitMQ");
+    */
 
     let pool = PgPoolOptions::new()
         .max_connections(5)

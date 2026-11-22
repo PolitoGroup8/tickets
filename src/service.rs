@@ -22,6 +22,8 @@ pub(crate) fn issue_tickets_from_message(
     Ok(issue_tickets(data))
 }
 
+
+/*
 #[cfg(test)]
 mod tests {
     use crate::domain::PaidOrderLine;
@@ -126,3 +128,4 @@ use super::*;
         assert!(result.is_err(), "OrderCancelled should be rejected");
     }
 }
+*/

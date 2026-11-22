@@ -28,3 +28,4 @@ pub async fn db_health(pool: &PgPool) -> Result<(), sqlx::Error> {
         .await
         .map(|_| ())
 }
+
