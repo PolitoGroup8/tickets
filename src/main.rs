@@ -6,22 +6,20 @@ mod config;
 mod db;
 mod domain;
 mod errors;
+mod rabbitmq;
 mod repository;
 mod service;
 mod store;
-
 
 // psql -h localhost -p 5432 -U user -d TICKETS
 
 #[tokio::main]
 async fn main() {
-    
     let _ = dotenvy::dotenv();
-    
+
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -32,7 +30,6 @@ async fn main() {
             std::process::exit(1);
         }
     };
-
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -53,15 +50,26 @@ async fn main() {
         Err(e) => tracing::warn!("cannot read the version of the database: {e}"),
     }
 
-    let app = Router::new()
-        .route("/health", get(health))
-        .with_state(pool);
+    let rabbitmq_connection = rabbitmq::connect().await.unwrap_or_else(|err| {
+        eprint!("Cannot connect to RabbitMQ: {err}");
+        std::process::exit(1);
+    });
+    print!("Connected to RabbitMQ");
+
+    tokio::spawn(async move {
+        if let Err(err) = rabbitmq::consume_demo_queue(&rabbitmq_connection).await {
+            eprintln!("RabbitMQ consumer stopped: {err}");
+        }
+    });
+
+    let app = Router::new().route("/health", get(health)).with_state(pool);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], cfg.port));
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("bind failed");
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("bind failed");
     tracing::info!("listening on http://{addr}");
     axum::serve(listener, app).await.expect("server failed");
-    
 }
 
 async fn health(State(pool): State<sqlx::PgPool>) -> Json<serde_json::Value> {
@@ -70,4 +78,3 @@ async fn health(State(pool): State<sqlx::PgPool>) -> Json<serde_json::Value> {
         Err(_) => Json(json!({ "status": "DOWN" })),
     }
 }
-
