@@ -6,6 +6,17 @@ pub enum StoreError {
     Failed(String),
 }
 
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::Failed(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}
+
+
 pub struct Order {
     pub order_id: String,
     pub customer_id: String,

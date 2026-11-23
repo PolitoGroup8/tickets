@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use lapin::message::Delivery;
 use lapin::protocol::connection;
 use lapin::{Connection, ConnectionProperties, uri::AMQPUri};
@@ -6,6 +8,8 @@ use lapin::{
     types::FieldTable,
 };
 use tokio_stream::StreamExt;
+
+use crate::store::PgTickets;
 
 pub(crate) async fn connect() -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
     let mut uri = AMQPUri::default();
@@ -18,7 +22,7 @@ pub(crate) async fn connect() -> Result<Connection, Box<dyn std::error::Error + 
     Ok(Connection::connect_uri(uri, ConnectionProperties::default()).await?)
 }
 
-pub(crate) async fn consume_queue_message(connection: &Connection) -> lapin::Result<()> {
+pub(crate) async fn consume_queue_message(connection: &Connection, repository: Arc<PgTickets>) -> lapin::Result<()> {
     let queue = "tickets.order-paid";
     let channel = connection.create_channel().await?;
 
@@ -46,7 +50,7 @@ pub(crate) async fn consume_queue_message(connection: &Connection) -> lapin::Res
 
         // STORAGE NEL DB
 
-        match crate::service::issue_tickets_from_message(&delivery.data){
+        match crate::service::issue_tickets_from_message(&delivery.data, &repository).await{
             Ok(tickets) => {
                 println!("{tickets:#?}");
                 delivery.ack(BasicAckOptions::default()).await?;

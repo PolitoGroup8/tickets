@@ -1,6 +1,82 @@
-use crate::domain::{NewTicket, OrderMessage, PaidOrder, TicketStatus};
+use crate::{
+    domain::{NewTicket, OrderMessage, PaidOrder, TicketStatus},
+    repository::{Order, OrderLine, StoreError, TicketRepository, TicketTransaction},
+    store::PgTickets,
+};
 
-fn issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
+pub(crate) async fn issue_tickets(
+    order: PaidOrder,
+    repository: &PgTickets,
+) -> Result<Vec<NewTicket>, StoreError> {
+    let mut tx: Box<dyn TicketTransaction> = repository.begin().await?;
+
+    // TODO: Move this conversion into the adapter.
+    let order = Order {
+        order_id: order.order_id.into(),
+        customer_id: order.customer_id.into(),
+
+        lines: order
+            .lines
+            .into_iter()
+            .map(|line| OrderLine {
+                order_line_id: line.order_line_id,
+                seat_id: line.seat_id,
+                seat_label: line.seat_label,
+                sector_id: line.sector_id,
+                sector_name: line.sector_name,
+            })
+            .collect(),
+
+        event_id: order.event.event_id.into(),
+        event_title: order.event.event_title.into(),
+        session_id: order.event.session_id.into(),
+        session_starts_at: order.event.starts_at.into(),
+        venue_name: order.event.venue_name.into(),
+        venue_city: order.event.venue_city.into(),
+        customer_email: order.customer_email.into(),
+        customer_name: order.customer_name.into(),
+    };
+
+    tx.save_order(&order).await?;
+
+    for line in &order.lines {
+        tx.save_ticket(line).await?;
+    }
+
+    tx.commit().await?;
+
+    let tickets = repository
+        .find_by_order_id(&order.order_id)
+        .await?
+        .ok_or(StoreError::Failed(
+            "Unreachable. The transaction committed".to_string(),
+        ))?;
+
+    Ok(tickets
+        .into_iter()
+        .map(|line| NewTicket {
+            order_line_id: line.order_line_id,
+            seat_id: line.seat_id,
+            seat_label: line.seat_label,
+            sector_id: line.sector_id,
+            sector_name: line.sector_name,
+            status: TicketStatus::Unscanned,
+        })
+        .collect())
+}
+
+pub(crate) async fn issue_tickets_from_message(
+    body: &[u8],
+    repository: &PgTickets,
+) -> Result<Vec<NewTicket>, Box<dyn std::error::Error + Send + Sync>> {
+    let OrderMessage::OrderPaid { data } = serde_json::from_slice(body)?;
+
+    let tickets = issue_tickets(data, repository).await?;
+
+    Ok(tickets)
+}
+
+fn test_issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
     order
         .lines
         .into_iter()
@@ -13,11 +89,6 @@ fn issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
             status: TicketStatus::Unscanned,
         })
         .collect()
-}
-
-pub(crate) fn issue_tickets_from_message(body: &[u8]) -> Result<Vec<NewTicket>, serde_json::Error> {
-    let OrderMessage::OrderPaid { data } = serde_json::from_slice(body)?;
-    Ok(issue_tickets(data))
 }
 
 #[cfg(test)]
@@ -61,7 +132,7 @@ mod tests {
             ],
         };
 
-        let tickets = issue_tickets(order);
+        let tickets = test_issue_tickets(order);
 
         assert_eq!(tickets.len(), 2);
         for (order_line_id, seat_id, seat_label, sector_id, sector_name) in [
@@ -114,7 +185,7 @@ mod tests {
         assert_eq!(order.lines[0].order_line_id, "line-1");
         assert_eq!(order.lines[0].seat_label, "E14");
 
-        let tickets = issue_tickets(order);
+        let tickets = test_issue_tickets(order);
 
         assert_eq!(tickets.len(), 2);
         println!("{tickets:#?}");

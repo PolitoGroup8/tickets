@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use axum::{Json, Router, extract::State, routing::get};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
+
+use crate::store::PgTickets;
 
 mod config;
 mod db;
@@ -50,6 +54,9 @@ async fn main() {
         Err(e) => tracing::warn!("cannot read the version of the database: {e}"),
     }
 
+    let repository = Arc::new(PgTickets::new(pool.clone()));
+    let consumer_repository = Arc::clone(&repository);
+    
     let rabbitmq_connection = rabbitmq::connect().await.unwrap_or_else(|err| {
         eprint!("Cannot connect to RabbitMQ: {err}");
         std::process::exit(1);
@@ -57,7 +64,7 @@ async fn main() {
     print!("Connected to RabbitMQ");
 
     tokio::spawn(async move {
-        if let Err(err) = rabbitmq::consume_queue_message(&rabbitmq_connection).await {
+        if let Err(err) = rabbitmq::consume_queue_message(&rabbitmq_connection, consumer_repository).await {
             eprintln!("RabbitMQ consumer stopped: {err}");
         }
     });
@@ -70,6 +77,7 @@ async fn main() {
         .expect("bind failed");
     tracing::info!("listening on http://{addr}");
     axum::serve(listener, app).await.expect("server failed");
+
 }
 
 async fn health(State(pool): State<sqlx::PgPool>) -> Json<serde_json::Value> {

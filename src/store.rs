@@ -50,12 +50,12 @@ impl From<TicketRow> for TicketRecord {
     }
 }
 
-struct PgTickets {
+pub struct PgTickets {
     pool: PgPool,
 }
 
 impl PgTickets {
-    fn new(pool: PgPool) -> PgTickets {
+    pub fn new(pool: PgPool) -> PgTickets {
         PgTickets { pool }
     }
 }
@@ -220,7 +220,7 @@ mod tests {
             }],
         };
 
-        let mut tx = repository.begin().await.unwrap();
+        let mut tx: Box<dyn TicketTransaction> = repository.begin().await.unwrap();
 
         tx.save_order(&order).await.unwrap();
 
@@ -288,7 +288,7 @@ mod tests {
             }
         }"#;
 
-        let generated = crate::service::issue_tickets_from_message(payload).unwrap();
+        let generated = crate::service::issue_tickets_from_message(payload, &repository).await.unwrap();
         assert_eq!(generated.len(), 2);
 
         let persisted = repository
