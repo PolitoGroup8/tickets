@@ -84,3 +84,10 @@ TICKET_SCAN(
 
 
 - Mapping da DTO a Record -- Sia per Order che OrderLine che per Ticket
+
+
+ ---> "orderLineId": "demo-line-3",
+ orderLineId non serve
+
+ ---> Type OrderPaid, tutto in caps lock con underscore
+ ---> 

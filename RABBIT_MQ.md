@@ -7,24 +7,21 @@ Inserisci un payload come
 {
   "type": "OrderPaid",
   "version": 1,
-  "data": {
-    "orderId": "ordine-demo-2",
-    "customerId": "cliente-demo-1",
-    "lines": [
-      {
-        "orderLineId": "demo-line-3",
-        "seatId": "seat-16",
-        "seatLabel": "E16",
-        "sectorId": "s1",
-        "sector": "platea"
-      },
-      {
-        "orderLineId": "demo-line-4",
-        "seatId": "seat-17",
-        "seatLabel": "E17",
-        "sectorId": "s1",
-        "sector": "platea"
-      }
+  "data":{
+    "orderId":"ordine-1",
+    "customerId":"cliente-1",
+    "customerEmail": "customer@example.test",
+    "event": {
+      "eventId": "evt_test",
+      "sessionId": "ses_test",
+      "eventTitle": "Concerto",
+      "startsAt": "2026-12-10T20:00:00Z",
+      "venueName": "Teatro",
+      "venueCity": "Torino"
+    },
+    "lines":[
+      { "orderLineId": "line-1", "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
+      { "orderLineId": "line-2", "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
     ]
   }
 }
