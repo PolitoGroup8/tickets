@@ -81,3 +81,6 @@ TICKET_SCAN(
 # OVERVIEW
 - Avremo 2 feature: uno che genera i biglietti, uno che scansiona i biglietti + send_notification
 - Inserimento delle porte degli adapter al database per i repository - il servizio ha all'interno un repository. Questo repository sa già su che porta ascoltare. Nell'app_state dobbiamo completiamo la comunicazione inserendo l'adapter a postgres. 
+
+
+- Mapping da DTO a Record -- Sia per Order che OrderLine che per Ticket
