@@ -33,7 +33,6 @@ pub struct Order {
 }
 
 pub struct OrderLine {
-    pub order_line_id: String,
     pub seat_id: String,
     pub seat_label: String,
     pub sector_id: String,
@@ -43,7 +42,6 @@ pub struct OrderLine {
 pub struct TicketRecord {
     pub ticket_id: String,
     pub meta_id: String,
-    pub order_line_id: String,
     pub sector_id: String,
     pub sector_name: String,
     pub seat_id: String,

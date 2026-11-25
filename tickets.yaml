@@ -39,7 +39,6 @@ paths:
                     items:
                       - ticketId: tkt_01JD9A
                         orderId: ord_01JD8W
-                        orderLineId: ol_1
                         eventId: evt_01JC1A
                         sessionId: ses_01JC4K
                         seatId: seat_01JB7Q
@@ -86,7 +85,6 @@ paths:
                   value:
                     ticketId: tkt_01JD9A
                     orderId: ord_01JD8W
-                    orderLineId: ol_1
                     eventId: evt_01JC1A
                     sessionId: ses_01JC4K
                     seatId: seat_01JB7Q
@@ -212,13 +210,12 @@ components:
 
   schemas:
     Ticket:
-      description: One ticket per (orderId, orderLineId); immutable order, session, seat and event display snapshot. Customer ownership comes from OrderPaid, never query/body fields.
+      description: One ticket per purchased order line. Each ticket carries an immutable order, session, seat and event display snapshot. Customer ownership comes from OrderPaid, never query/body fields.
       type: object
-      required: [ticketId, orderId, orderLineId, eventId, sessionId, seatId, seatLabel, sectorId, sector, event, status, issuedAt, scannedAt]
+      required: [ticketId, orderId, eventId, sessionId, seatId, seatLabel, sectorId, sector, event, status, issuedAt, scannedAt]
       properties:
         ticketId: { type: string }
         orderId: { type: string }
-        orderLineId: { type: string }
         eventId: { type: string }
         sessionId: { type: string }
         seatId: { type: string }
@@ -375,7 +372,6 @@ components:
       value:
         ticketId: tkt_01JD9A
         orderId: ord_01JD8W
-        orderLineId: ol_1
         eventId: evt_01JC1A
         sessionId: ses_01JC4K
         seatId: seat_01JB7Q

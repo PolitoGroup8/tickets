@@ -10,6 +10,7 @@ pub enum TicketStatus {
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum OrderMessage {
+    #[serde(rename = "ORDER_PAID")]
     OrderPaid { data: PaidOrder },
 }
 
@@ -27,7 +28,6 @@ pub struct PaidOrder {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaidOrderLine {
-    pub(crate) order_line_id: String,
     pub(crate) seat_id: String,
     pub(crate) seat_label: String,
     pub(crate) sector_id: String,
@@ -38,7 +38,7 @@ pub struct PaidOrderLine {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct NewTicket {
-    pub(crate) order_line_id: String,
+    pub(crate) ticket_id: String,
     pub(crate) seat_id: String,
     pub(crate) seat_label: String,
     pub(crate) sector_id: String,

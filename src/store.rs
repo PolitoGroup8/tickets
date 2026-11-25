@@ -21,7 +21,6 @@ struct PgTransaction {
 struct TicketRow {
     ticket_id: Uuid,
     meta_id: Uuid,
-    order_line_id: String,
     sector_id: String,
     sector_name: String,
     seat_id: String,
@@ -37,7 +36,6 @@ impl From<TicketRow> for TicketRecord {
         TicketRecord {
             ticket_id: r.ticket_id.to_string(),
             meta_id: r.meta_id.to_string(),
-            order_line_id: r.order_line_id,
             sector_id: r.sector_id,
             sector_name: r.sector_name,
             seat_id: r.seat_id,
@@ -73,7 +71,7 @@ impl TicketRepository for PgTickets {
         order_id: &str,
     ) -> Result<Option<Vec<TicketRecord>>, StoreError> {
         let rows = sqlx::query_as::<_, TicketRow>(
-            r#"SELECT t.ticket_id, t.meta_id, t.order_line_id,
+            r#"SELECT t.ticket_id, t.meta_id,
                       t.sector_id, t.sector_name, t.seat_id,
                       t.seat_label, t.seat_row, t.seat_number,
                       to_char(t.issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS issued_at,
@@ -95,7 +93,7 @@ impl TicketRepository for PgTickets {
 
     async fn find_by_ticket_id(&self, ticket_id: &str) -> Result<Option<TicketRecord>, StoreError> {
         let row = sqlx::query_as::<_, TicketRow>(
-            r#"SELECT ticket_id, meta_id, order_line_id,
+            r#"SELECT ticket_id, meta_id,
                       sector_id, sector_name, seat_id,
                       seat_label, seat_row, seat_number,
                       to_char(issued_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS issued_at,
@@ -159,17 +157,15 @@ impl TicketTransaction for PgTransaction {
             r#"
             INSERT INTO ticket (
                 meta_id,
-                order_line_id,
                 sector_id,
                 sector_name,
                 seat_id,
                 seat_label
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(meta_id)
-        .bind(&order_line.order_line_id)
         .bind(&order_line.sector_id)
         .bind(&order_line.sector_name)
         .bind(&order_line.seat_id)
@@ -212,7 +208,6 @@ mod tests {
             customer_email: "test@example.com".into(),
             customer_name: Some("Test User".into()),
             lines: vec![OrderLine {
-                order_line_id: "line-001".into(),
                 seat_id: "seat-001".into(),
                 seat_label: "A1".into(),
                 sector_id: "sector-001".into(),
@@ -267,23 +262,23 @@ mod tests {
         let repository = PgTickets::new(pool);
 
         let payload = br#"{
-            "type": "OrderPaid",
+            "type": "ORDER_PAID",
             "version": 1,
             "data": {
                 "orderId": "ordine_test",
                 "customerId": "customer_test",
                 "customerEmail": "customer@example.test",
-                "eventId": "evt_test",
-                "sessionId": "ses_test",
                 "event": {
+                    "eventId": "evt_test",
+                    "sessionId": "ses_test",
                     "eventTitle": "Concerto",
                     "startsAt": "2026-12-10T20:00:00Z",
                     "venueName": "Teatro",
                     "venueCity": "Torino"
                 },
                 "lines": [
-                    {"orderLineId":"ol_1","seatId":"seat_14","seatLabel":"E14","sectorId":"s1","sector":"Platea"},
-                    {"orderLineId":"ol_2","seatId":"seat_15","seatLabel":"E15","sectorId":"s1","sector":"Platea"}
+                    {"seatId":"seat_14","seatLabel":"E14","sectorId":"s1","sector":"Platea"},
+                    {"seatId":"seat_15","seatLabel":"E15","sectorId":"s1","sector":"Platea"}
                 ]
             }
         }"#;

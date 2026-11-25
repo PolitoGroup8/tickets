@@ -19,7 +19,6 @@ pub(crate) async fn issue_tickets(
             .lines
             .into_iter()
             .map(|line| OrderLine {
-                order_line_id: line.order_line_id,
                 seat_id: line.seat_id,
                 seat_label: line.seat_label,
                 sector_id: line.sector_id,
@@ -55,7 +54,7 @@ pub(crate) async fn issue_tickets(
     Ok(tickets
         .into_iter()
         .map(|line| NewTicket {
-            order_line_id: line.order_line_id,
+            ticket_id: line.ticket_id,
             seat_id: line.seat_id,
             seat_label: line.seat_label,
             sector_id: line.sector_id,
@@ -76,12 +75,13 @@ pub(crate) async fn issue_tickets_from_message(
     Ok(tickets)
 }
 
+#[cfg(test)]
 fn test_issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
     order
         .lines
         .into_iter()
         .map(|line| NewTicket {
-            order_line_id: line.order_line_id,
+            ticket_id: uuid::Uuid::new_v4().to_string(),
             seat_id: line.seat_id,
             seat_label: line.seat_label,
             sector_id: line.sector_id,
@@ -116,14 +116,12 @@ mod tests {
             },
             lines: vec![
                 PaidOrderLine {
-                    order_line_id: "line-1".into(),
                     seat_id: "seat-14".into(),
                     seat_label: "E14".into(),
                     sector_id: "s1".into(),
                     sector_name: "platea".into(),
                 },
                 PaidOrderLine {
-                    order_line_id: "line-2".into(),
                     seat_id: "seat-15".into(),
                     seat_label: "E15".into(),
                     sector_id: "s2".into(),
@@ -135,18 +133,19 @@ mod tests {
         let tickets = test_issue_tickets(order);
 
         assert_eq!(tickets.len(), 2);
-        for (order_line_id, seat_id, seat_label, sector_id, sector_name) in [
-            ("line-1", "seat-14", "E14", "s1", "platea"),
-            ("line-2", "seat-15", "E15", "s2", "piccionaia"),
+        for (seat_id, seat_label, sector_id, sector_name) in [
+            ("seat-14", "E14", "s1", "platea"),
+            ("seat-15", "E15", "s2", "piccionaia"),
         ] {
-            assert!(tickets.contains(&NewTicket {
-                order_line_id: order_line_id.into(),
-                seat_id: seat_id.into(),
-                seat_label: seat_label.into(),
-                sector_id: sector_id.into(),
-                sector_name: sector_name.into(),
-                status: TicketStatus::Unscanned,
-            }));
+            let ticket = tickets
+                .iter()
+                .find(|ticket| ticket.seat_id == seat_id)
+                .expect("ticket for the expected seat");
+
+            assert_eq!(ticket.seat_label, seat_label);
+            assert_eq!(ticket.sector_id, sector_id);
+            assert_eq!(ticket.sector_name, sector_name);
+            assert_eq!(ticket.status, TicketStatus::Unscanned);
         }
 
         println!("{tickets:#?}");
@@ -155,7 +154,7 @@ mod tests {
     #[test]
     fn reads_paid_order_lines_from_json() {
         let json = r#"{
-            "type": "OrderPaid",
+            "type": "ORDER_PAID",
             "version": 1,
             "data":{
                 "orderId":"ordine-1",
@@ -170,8 +169,8 @@ mod tests {
                     "venueCity": "Torino"
                 },
                 "lines":[
-                    { "orderLineId": "line-1", "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
-                    { "orderLineId": "line-2", "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
+                    { "seatId": "seat-14", "seatLabel": "E14", "sectorId": "s1", "sector": "platea" },
+                    { "seatId": "seat-15", "seatLabel": "E15", "sectorId": "s2", "sector": "piccionaia" }
                 ]
             }
         }"#;
@@ -182,7 +181,7 @@ mod tests {
         assert_eq!(order.lines.len(), 2);
         assert_eq!(order.order_id, "ordine-1");
         assert_eq!(order.customer_id, "cliente-1");
-        assert_eq!(order.lines[0].order_line_id, "line-1");
+        assert_eq!(order.lines[0].seat_id, "seat-14");
         assert_eq!(order.lines[0].seat_label, "E14");
 
         let tickets = test_issue_tickets(order);
@@ -201,7 +200,6 @@ mod tests {
                 "customerId": "cliente-1",
                 "lines":[
                     { 
-                        "orderLineId": "linea-1",
                         "seatId": "seat-14",
                         "seatLabel": "E14",
                         "sectorId": "s1",
