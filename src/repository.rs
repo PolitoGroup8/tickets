@@ -4,18 +4,21 @@ use chrono::{DateTime, Utc};
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoreError {
     Failed(String),
+    QrUploadFailed(String),
+    OrderAlreadyExists,
 }
 
 impl std::fmt::Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StoreError::Failed(msg) => write!(f, "{msg}"),
+            StoreError::QrUploadFailed(msg) => write!(f, "QR upload failed: {msg}"),
+            StoreError::OrderAlreadyExists => write!(f, "Order already exists"),
         }
     }
 }
 
 impl std::error::Error for StoreError {}
-
 
 pub struct Order {
     pub order_id: String,
@@ -58,14 +61,34 @@ pub struct TicketRecord {
 #[async_trait]
 pub trait TicketRepository: Send + Sync {
     async fn begin(&self) -> Result<Box<dyn TicketTransaction>, StoreError>;
-    async fn find_by_order_id(&self, order_id: &str) -> Result<Option<Vec<TicketRecord>>, StoreError>;
+    async fn find_by_order_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<Vec<TicketRecord>>, StoreError>;
     async fn find_by_ticket_id(&self, ticket_id: &str) -> Result<Option<TicketRecord>, StoreError>;
+    async fn find_pending_tickets_issued(
+    &self,
+    order_id: &str,
+) -> Result<Option<(uuid::Uuid, serde_json::Value)>, StoreError>;
+
+async fn mark_tickets_issued_published(&self, event_id: uuid::Uuid) -> Result<(), StoreError>;
 }
 
 #[async_trait]
 pub trait TicketTransaction: Send {
     async fn save_order(&mut self, order: &Order) -> Result<(), StoreError>;
-    async fn save_ticket(&mut self, order_line: &OrderLine) -> Result<(), StoreError>;
+    async fn save_ticket(
+        &mut self,
+        order_line: &OrderLine,
+        credential_hash: &[u8; 32],
+    ) -> Result<String, StoreError>;
+
+    async fn save_tickets_issued(
+        &mut self,
+        event_id: uuid::Uuid,
+        payload: &serde_json::Value,
+    ) -> Result<(), StoreError>;
+
     async fn commit(self: Box<Self>) -> Result<(), StoreError>;
 }
 

@@ -6,10 +6,10 @@ WORKDIR /app
 # Copy dependency manifests
 COPY Cargo.toml Cargo.lock ./
 
-COPY ./.env  ./.env
-
 # Copy application source
 COPY src ./src
+
+COPY migrations ./migrations
 
 # Compile the application
 RUN cargo build

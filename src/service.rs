@@ -3,11 +3,35 @@ use crate::{
     repository::{Order, OrderLine, StoreError, TicketRepository, TicketTransaction},
     store::PgTickets,
 };
+use sha2::{Digest, Sha256};
+use std::future::Future;
+use uuid::Uuid;
 
-pub(crate) async fn issue_tickets(
+struct TicketCredential {
+    token: Uuid,
+    hash: [u8; 32],
+}
+
+fn generate_ticket_credential() -> TicketCredential {
+    let token = Uuid::new_v4();
+    let hash = Sha256::digest(token.as_bytes()).into();
+
+    TicketCredential { token, hash }
+}
+
+struct IssuedTicket {
+    ticket: NewTicket,
+    token: Uuid,
+}
+
+pub(crate) async fn issue_tickets<Fut>(
     order: PaidOrder,
     repository: &PgTickets,
-) -> Result<Vec<NewTicket>, StoreError> {
+    upload_qr: impl Fn(String, Uuid) -> Fut,
+) -> Result<Vec<NewTicket>, StoreError>
+where
+    Fut: Future<Output = Result<(), StoreError>>,
+{
     let mut tx: Box<dyn TicketTransaction> = repository.begin().await?;
 
     // TODO: Move this conversion into the adapter.
@@ -36,43 +60,114 @@ pub(crate) async fn issue_tickets(
         customer_name: order.customer_name.into(),
     };
 
-    tx.save_order(&order).await?;
-
-    for line in &order.lines {
-        tx.save_ticket(line).await?;
+    match tx.save_order(&order).await {
+        Ok(()) => {}
+        Err(StoreError::OrderAlreadyExists) => {
+            drop(tx);
+            return load_existing_tickets(repository, &order).await;
+        }
+        Err(err) => return Err(err),
     }
 
+    let mut tickets = Vec::with_capacity(order.lines.len());
+
+    for line in order.lines {
+        let credential = generate_ticket_credential();
+        let ticket_id = tx.save_ticket(&line, &credential.hash).await?;
+
+        tickets.push(IssuedTicket {
+            ticket: NewTicket {
+                ticket_id,
+                seat_id: line.seat_id,
+                seat_label: line.seat_label,
+                sector_id: line.sector_id,
+                sector_name: line.sector_name,
+                status: TicketStatus::Unscanned,
+            },
+            token: credential.token,
+        });
+    }
+
+    for issued in &tickets {
+        upload_qr(issued.ticket.ticket_id.clone(), issued.token).await?;
+    }
+
+    let event_id = Uuid::new_v4();
+    let ticket_ids: Vec<_> = tickets
+        .iter()
+        .map(|issued| issued.ticket.ticket_id.clone())
+        .collect();
+
+    let event = crate::events::tickets_issued_event(
+        &event_id.to_string(),
+        chrono::Utc::now(),
+        &order.order_id,
+        &order.customer_email,
+        &ticket_ids,
+    );
+    tx.save_tickets_issued(event_id, &event).await?;
     tx.commit().await?;
-
-    let tickets = repository
-        .find_by_order_id(&order.order_id)
-        .await?
-        .ok_or(StoreError::Failed(
-            "Unreachable. The transaction committed".to_string(),
-        ))?;
-
-    Ok(tickets
-        .into_iter()
-        .map(|line| NewTicket {
-            ticket_id: line.ticket_id,
-            seat_id: line.seat_id,
-            seat_label: line.seat_label,
-            sector_id: line.sector_id,
-            sector_name: line.sector_name,
-            status: TicketStatus::Unscanned,
-        })
-        .collect())
+    Ok(tickets.into_iter().map(|issued| issued.ticket).collect())
 }
 
-pub(crate) async fn issue_tickets_from_message(
+async fn load_existing_tickets(
+    repository: &PgTickets,
+    order: &Order,
+) -> Result<Vec<NewTicket>, StoreError> {
+    let stored = repository
+        .find_by_order_id(&order.order_id)
+        .await?
+        .unwrap_or_default();
+
+    let mut expected_seats: Vec<_> = order.lines.iter().map(|line| &line.seat_id).collect();
+    let mut stored_seats: Vec<_> = stored.iter().map(|ticket| &ticket.seat_id).collect();
+    expected_seats.sort_unstable();
+    stored_seats.sort_unstable();
+
+    if expected_seats != stored_seats {
+        return Err(StoreError::Failed(
+            "Order already exists with different seats".into(),
+        ));
+    }
+
+    stored
+        .into_iter()
+        .map(|ticket| {
+            let status = match ticket.status.as_str() {
+                "UNSCANNED" => TicketStatus::Unscanned,
+                "SCANNED" => TicketStatus::Scanned,
+                "REVOKED" => TicketStatus::Revoked,
+                other => {
+                    return Err(StoreError::Failed(format!(
+                        "Unknown ticket status: {other}"
+                    )));
+                }
+            };
+            Ok(NewTicket {
+                ticket_id: ticket.ticket_id,
+                seat_id: ticket.seat_id,
+                seat_label: ticket.seat_label,
+                sector_id: ticket.sector_id,
+                sector_name: ticket.sector_name,
+                status,
+            })
+        })
+        .collect()
+}
+
+pub(crate) async fn issue_tickets_from_message<Fut>(
     body: &[u8],
     repository: &PgTickets,
-) -> Result<Vec<NewTicket>, Box<dyn std::error::Error + Send + Sync>> {
+    upload_qr: impl Fn(String, Uuid) -> Fut,
+) -> Result<(String, Vec<NewTicket>), Box<dyn std::error::Error + Send + Sync>>
+where
+    Fut: Future<Output = Result<(), StoreError>>,
+{
     let OrderMessage::OrderPaid { data } = serde_json::from_slice(body)?;
 
-    let tickets = issue_tickets(data, repository).await?;
-
-    Ok(tickets)
+    let order_id = data.order_id.clone();
+    let tickets = issue_tickets(data, repository, upload_qr).await?;
+    Ok((order_id, tickets))
 }
 
 #[cfg(test)]
@@ -93,7 +188,7 @@ fn test_issue_tickets(order: PaidOrder) -> Vec<NewTicket> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
 
     use crate::domain::{EventSnapshot, PaidOrderLine};
 
@@ -212,5 +307,18 @@ mod tests {
         let result = serde_json::from_str::<OrderMessage>(json);
 
         assert!(result.is_err(), "OrderCancelled should be rejected");
+    }
+
+    #[test]
+    fn generates_distinct_ticket_credentials() {
+        use sha2::{Digest, Sha256};
+
+        let first = super::generate_ticket_credential();
+        let second = super::generate_ticket_credential();
+
+        let expected: [u8; 32] = Sha256::digest(first.token.as_bytes()).into();
+
+        assert_eq!(first.hash, expected);
+        assert_ne!(first.hash, second.hash);
     }
 }

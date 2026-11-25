@@ -14,6 +14,9 @@ mod rabbitmq;
 mod repository;
 mod service;
 mod store;
+mod qr;
+mod storage;
+mod events;
 
 // psql -h localhost -p 5432 -U user -d TICKETS
 

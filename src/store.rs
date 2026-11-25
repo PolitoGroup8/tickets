@@ -107,12 +107,41 @@ impl TicketRepository for PgTickets {
 
         Ok(row.map(TicketRecord::from))
     }
+
+    async fn find_pending_tickets_issued(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<(Uuid, serde_json::Value)>, StoreError> {
+        let event = sqlx::query_as(
+            "SELECT o.event_id, o.payload
+         FROM ticket_outbox o
+         JOIN ticket_meta m ON m.ticket_meta_id = o.meta_id
+         WHERE m.order_id = $1 AND o.published_at IS NULL",
+        )
+        .bind(order_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(event)
+    }
+
+    async fn mark_tickets_issued_published(&self, event_id: Uuid) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE ticket_outbox SET published_at = now()
+         WHERE event_id = $1 AND published_at IS NULL",
+        )
+        .bind(event_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl TicketTransaction for PgTransaction {
     async fn save_order(&mut self, order: &Order) -> Result<(), StoreError> {
-        let meta_id: Uuid = sqlx::query_scalar(
+        let meta_id: Option<Uuid> = sqlx::query_scalar(
             r#"
             INSERT INTO ticket_meta (
                 order_id,
@@ -127,6 +156,7 @@ impl TicketTransaction for PgTransaction {
                 customer_name
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (order_id) DO NOTHING
             RETURNING ticket_meta_id
             "#,
         )
@@ -140,45 +170,70 @@ impl TicketTransaction for PgTransaction {
         .bind(&order.customer_id)
         .bind(&order.customer_email)
         .bind(&order.customer_name)
-        .fetch_one(&mut *self.tx)
+        .fetch_optional(&mut *self.tx)
         .await?;
 
-        self.meta_id = Some(meta_id);
+        self.meta_id = Some(meta_id.ok_or(StoreError::OrderAlreadyExists)?);
 
         Ok(())
     }
 
-    async fn save_ticket(&mut self, order_line: &OrderLine) -> Result<(), StoreError> {
+    async fn save_ticket(
+        &mut self,
+        order_line: &OrderLine,
+        credential_hash: &[u8; 32],
+    ) -> Result<String, StoreError> {
         let meta_id = self
             .meta_id
             .ok_or_else(|| StoreError::Failed("Order not saved".into()))?;
 
-        sqlx::query(
+        let ticket_id: Uuid = sqlx::query_scalar(
             r#"
-            INSERT INTO ticket (
-                meta_id,
-                sector_id,
-                sector_name,
-                seat_id,
-                seat_label
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
+        INSERT INTO ticket (
+            meta_id,
+            sector_id,
+            sector_name,
+            seat_id,
+            seat_label,
+            credential_hash
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING ticket_id
+        "#,
         )
         .bind(meta_id)
         .bind(&order_line.sector_id)
         .bind(&order_line.sector_name)
         .bind(&order_line.seat_id)
         .bind(&order_line.seat_label)
-        .execute(&mut *self.tx)
+        .bind(credential_hash.as_slice())
+        .fetch_one(&mut *self.tx)
         .await?;
+
+        Ok(ticket_id.to_string())
+    }
+
+    async fn save_tickets_issued(
+        &mut self,
+        event_id: Uuid,
+        payload: &serde_json::Value,
+    ) -> Result<(), StoreError> {
+        let meta_id = self
+            .meta_id
+            .ok_or_else(|| StoreError::Failed("Order not saved".into()))?;
+
+        sqlx::query("INSERT INTO ticket_outbox (event_id, meta_id, payload) VALUES ($1, $2, $3)")
+            .bind(event_id)
+            .bind(meta_id)
+            .bind(payload)
+            .execute(&mut *self.tx)
+            .await?;
 
         Ok(())
     }
 
     async fn commit(self: Box<Self>) -> Result<(), StoreError> {
         self.tx.commit().await?;
-
         Ok(())
     }
 }
@@ -220,7 +275,7 @@ mod tests {
         tx.save_order(&order).await.unwrap();
 
         for line in &order.lines {
-            tx.save_ticket(line).await.unwrap();
+            tx.save_ticket(line, &[0_u8; 32]).await.unwrap();
         }
 
         tx.commit().await.unwrap();
@@ -244,6 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn order_paid_persists_two_tickets() {
+        use sha2::{Digest, Sha256};
         use testcontainers_modules::{
             postgres::Postgres as PostgresImage,
             testcontainers::{ImageExt, runners::AsyncRunner},
@@ -259,7 +315,8 @@ mod tests {
         let database_url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
         let pool = PgPool::connect(&database_url).await.unwrap();
         crate::db::migrator().run(&pool).await.unwrap();
-        let repository = PgTickets::new(pool);
+
+        let repository = PgTickets::new(pool.clone());
 
         let payload = br#"{
             "type": "ORDER_PAID",
@@ -283,8 +340,48 @@ mod tests {
             }
         }"#;
 
-        let generated = crate::service::issue_tickets_from_message(payload, &repository).await.unwrap();
+        let failed =
+            crate::service::issue_tickets_from_message(payload, &repository, |_, _| async {
+                Err(StoreError::Failed("QR upload failed".into()))
+            })
+            .await;
+
+        assert!(failed.is_err());
+        assert!(
+            repository
+                .find_by_order_id("ordine_test")
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let uploaded = std::sync::Mutex::new(Vec::new());
+        let (_, generated) =
+            crate::service::issue_tickets_from_message(payload, &repository, |ticket_id, token| {
+                uploaded
+                    .lock()
+                    .unwrap()
+                    .push((ticket_id, Sha256::digest(token.as_bytes())));
+                std::future::ready(Ok(()))
+            })
+            .await
+            .unwrap();
+
         assert_eq!(generated.len(), 2);
+        let uploaded = uploaded.into_inner().unwrap();
+        assert_eq!(uploaded.len(), generated.len());
+
+        for (ticket_id, expected_hash) in uploaded {
+            let ticket_id = Uuid::parse_str(&ticket_id).unwrap();
+            let stored_hash: Vec<u8> =
+                sqlx::query_scalar("SELECT credential_hash FROM ticket WHERE ticket_id = $1")
+                    .bind(ticket_id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+
+            assert_eq!(stored_hash.as_slice(), &expected_hash[..]);
+        }
 
         let persisted = repository
             .find_by_order_id("ordine_test")
@@ -295,5 +392,44 @@ mod tests {
         assert_eq!(persisted.len(), 2);
         assert_eq!(persisted[0].meta_id, persisted[1].meta_id);
         assert!(persisted.iter().all(|ticket| ticket.status == "UNSCANNED"));
+
+        let (_,replayed) =
+            crate::service::issue_tickets_from_message(payload, &repository, |_, _| async {
+                panic!("a redelivered order must reuse its existing QR codes");
+            })
+            .await
+            .expect("a redelivered order must return its existing tickets");
+
+        assert_eq!(replayed.len(), generated.len());
+        for original in &generated {
+            assert!(
+                replayed
+                    .iter()
+                    .any(|issued| issued.ticket_id == original.ticket_id)
+            );
+        }
+
+        let (event_id, queued) = repository
+            .find_pending_tickets_issued("ordine_test")
+            .await
+            .unwrap()
+            .expect("TicketsIssued must be pending");
+
+        assert_eq!(queued["eventId"], event_id.to_string());
+        assert_eq!(queued["type"], "TICKETS_ISSUED");
+        assert_eq!(queued["data"]["tickets"].as_array().unwrap().len(), 2);
+
+        repository
+            .mark_tickets_issued_published(event_id)
+            .await
+            .unwrap();
+
+        assert!(
+            repository
+                .find_pending_tickets_issued("ordine_test")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

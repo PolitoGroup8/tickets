@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 pub enum TicketStatus {
     #[serde(rename = "not_scanned")]
     Unscanned,
+    #[serde(rename = "scanned")]
+    Scanned,
+    #[serde(rename = "revoked")]
+    Revoked,
 }
 
 #[derive(Deserialize)]

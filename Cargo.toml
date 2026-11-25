@@ -20,7 +20,11 @@ sqlx = { version = "0.9", default-features = false, features = [
 ] }
 async-trait = "0.1"
 lapin = "4"
+sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+aws-sdk-s3 = "1.161"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
