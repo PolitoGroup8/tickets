@@ -4,7 +4,7 @@ use sqlx::{PgPool, migrate::{MigrateError, Migrator}, postgres::PgDatabaseError}
 
 
 pub fn migrator() -> Migrator {
-    let mut migrator = sqlx::migrate!();
+    let migrator = sqlx::migrate!();
     migrator
 }
 

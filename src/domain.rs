@@ -1,5 +1,9 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use crate::repository::StoreError;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TicketStatus {
@@ -9,6 +13,20 @@ pub enum TicketStatus {
     Scanned,
     #[serde(rename = "revoked")]
     Revoked,
+}
+impl FromStr for TicketStatus {
+    type Err = StoreError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "UNSCANNED" => Ok(Self::Unscanned),
+            "SCANNED" => Ok(Self::Scanned),
+            "REVOKED" => Ok(Self::Revoked),
+            other => Err(StoreError::Failed(format!(
+                "Unknown ticket status: {other}"
+            ))),
+        }
+    }
 }
 
 #[derive(Deserialize)]

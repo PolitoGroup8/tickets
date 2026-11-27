@@ -1,6 +1,6 @@
 use crate::{
     domain::{NewTicket, OrderMessage, PaidOrder, TicketStatus},
-    repository::{Order, OrderLine, StoreError, TicketRepository, TicketTransaction},
+    repository::{Order, StoreError, TicketRepository, TicketTransaction},
     store::PgTickets,
 };
 use sha2::{Digest, Sha256};
@@ -34,31 +34,7 @@ where
 {
     let mut tx: Box<dyn TicketTransaction> = repository.begin().await?;
 
-    // TODO: Move this conversion into the adapter.
-    let order = Order {
-        order_id: order.order_id.into(),
-        customer_id: order.customer_id.into(),
-
-        lines: order
-            .lines
-            .into_iter()
-            .map(|line| OrderLine {
-                seat_id: line.seat_id,
-                seat_label: line.seat_label,
-                sector_id: line.sector_id,
-                sector_name: line.sector_name,
-            })
-            .collect(),
-
-        event_id: order.event.event_id.into(),
-        event_title: order.event.event_title.into(),
-        session_id: order.event.session_id.into(),
-        session_starts_at: order.event.starts_at.into(),
-        venue_name: order.event.venue_name.into(),
-        venue_city: order.event.venue_city.into(),
-        customer_email: order.customer_email.into(),
-        customer_name: order.customer_name.into(),
-    };
+    let order = Order::from(order);
 
     match tx.save_order(&order).await {
         Ok(()) => {}
@@ -132,26 +108,7 @@ async fn load_existing_tickets(
 
     stored
         .into_iter()
-        .map(|ticket| {
-            let status = match ticket.status.as_str() {
-                "UNSCANNED" => TicketStatus::Unscanned,
-                "SCANNED" => TicketStatus::Scanned,
-                "REVOKED" => TicketStatus::Revoked,
-                other => {
-                    return Err(StoreError::Failed(format!(
-                        "Unknown ticket status: {other}"
-                    )));
-                }
-            };
-            Ok(NewTicket {
-                ticket_id: ticket.ticket_id,
-                seat_id: ticket.seat_id,
-                seat_label: ticket.seat_label,
-                sector_id: ticket.sector_id,
-                sector_name: ticket.sector_name,
-                status,
-            })
-        })
+        .map(NewTicket::try_from)
         .collect()
 }
 

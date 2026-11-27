@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
+use crate::domain::{NewTicket, PaidOrder, PaidOrderLine, TicketStatus};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoreError {
     Failed(String),
@@ -35,11 +37,40 @@ pub struct Order {
     pub customer_name: Option<String>,
 }
 
+impl From<PaidOrder> for Order {
+    fn from(order: PaidOrder) -> Self {
+        Self {
+            order_id: order.order_id.into(),
+            customer_id: order.customer_id.into(),
+            lines: order.lines.into_iter().map(Into::into).collect(),
+            event_id: order.event.event_id.into(),
+            event_title: order.event.event_title,
+            session_id: order.event.session_id.into(),
+            session_starts_at: order.event.starts_at,
+            venue_name: order.event.venue_name,
+            venue_city: order.event.venue_city,
+            customer_email: order.customer_email,
+            customer_name: order.customer_name,
+        }
+    }
+}
+
 pub struct OrderLine {
     pub seat_id: String,
     pub seat_label: String,
     pub sector_id: String,
     pub sector_name: String,
+}
+
+impl From<PaidOrderLine> for OrderLine {
+    fn from(line: PaidOrderLine) -> Self {
+        Self {
+            seat_id: line.seat_id,
+            seat_label: line.seat_label,
+            sector_id: line.sector_id,
+            sector_name: line.sector_name,
+        }
+    }
 }
 
 pub struct TicketRecord {
@@ -53,6 +84,21 @@ pub struct TicketRecord {
     pub seat_number: Option<i32>,
     pub issued_at: String,
     pub status: String,
+}
+
+impl TryFrom<TicketRecord> for NewTicket {
+    type Error = StoreError;
+
+    fn try_from(ticket: TicketRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
+            ticket_id: ticket.ticket_id,
+            seat_id: ticket.seat_id,
+            seat_label: ticket.seat_label,
+            sector_id: ticket.sector_id,
+            sector_name: ticket.sector_name,
+            status: ticket.status.parse()?,
+        })
+    }
 }
 
 // Important design question: Do you need reads inside the transaction? Currently NO
@@ -90,18 +136,4 @@ pub trait TicketTransaction: Send {
     ) -> Result<(), StoreError>;
 
     async fn commit(self: Box<Self>) -> Result<(), StoreError>;
-}
-
-/// The current time.
-pub trait Clock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
-}
-
-/// The clock of the running service.
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
 }
