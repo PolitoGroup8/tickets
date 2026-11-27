@@ -97,18 +97,24 @@ L’esempio riprende l’ordine e i due biglietti della prova sopra.
   "data": {
     "orderId": "ordine-1",
     "customerEmail": "customer@example.test",
+    "customerName": "Mario Rossi",
+    "event": {
+      "eventTitle": "Concerto",
+      "startsAt": "2026-12-10T20:00:00Z",
+      "venueName": "Teatro",
+      "venueCity": "Torino"
+    },
     "tickets": [
       {
         "ticketId": "b63fe671-a440-4f05-afbf-585dcc28a388",
-        "qrObjectKey": "tickets/b63fe671-a440-4f05-afbf-585dcc28a388/qr.png"
-      },
-      {
-        "ticketId": "88037922-0f28-4fa6-aa5f-ccd2dd8dca16",
-        "qrObjectKey": "tickets/88037922-0f28-4fa6-aa5f-ccd2dd8dca16/qr.png"
+        "qrObjectKey": "tickets/b63fe671-a440-4f05-afbf-585dcc28a388/qr.png",
+        "seatLabel": "E14",
+        "sector": "platea"
       }
     ]
   }
 }
+
 ```
 
 ### Ritenti

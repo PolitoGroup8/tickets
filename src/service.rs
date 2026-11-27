@@ -1,5 +1,5 @@
 use crate::{
-    domain::{NewTicket, OrderMessage, PaidOrder, TicketStatus},
+    domain::{EventSnapshot, NewTicket, OrderMessage, PaidOrder, TicketStatus},
     repository::{Order, StoreError, TicketRepository, TicketTransaction},
     store::PgTickets,
 };
@@ -25,7 +25,7 @@ struct IssuedTicket {
 }
 
 pub(crate) async fn issue_tickets<Fut>(
-    order: PaidOrder,
+    paid_order: PaidOrder,
     repository: &PgTickets,
     upload_qr: impl Fn(String, Uuid) -> Fut,
 ) -> Result<Vec<NewTicket>, StoreError>
@@ -34,7 +34,7 @@ where
 {
     let mut tx: Box<dyn TicketTransaction> = repository.begin().await?;
 
-    let order = Order::from(order);
+    let order = Order::from(paid_order);
 
     match tx.save_order(&order).await {
         Ok(()) => {}
@@ -69,17 +69,24 @@ where
     }
 
     let event_id = Uuid::new_v4();
-    let ticket_ids: Vec<_> = tickets
-        .iter()
-        .map(|issued| issued.ticket.ticket_id.clone())
-        .collect();
+
+    let event_snapshot = EventSnapshot {
+        event_id: order.event_id.clone(),
+        session_id: order.session_id.clone(),
+        event_title: order.event_title.clone(),
+        starts_at: order.session_starts_at,
+        venue_name: order.venue_name.clone(),
+        venue_city: order.venue_city.clone(),
+    };
 
     let event = crate::events::tickets_issued_event(
         &event_id.to_string(),
         chrono::Utc::now(),
         &order.order_id,
         &order.customer_email,
-        &ticket_ids,
+        order.customer_name.as_deref(),
+        &event_snapshot,
+        tickets.iter().map(|issued| &issued.ticket),
     );
     tx.save_tickets_issued(event_id, &event).await?;
     tx.commit().await?;
@@ -106,10 +113,7 @@ async fn load_existing_tickets(
         ));
     }
 
-    stored
-        .into_iter()
-        .map(NewTicket::try_from)
-        .collect()
+    stored.into_iter().map(NewTicket::try_from).collect()
 }
 
 pub(crate) async fn issue_tickets_from_message<Fut>(

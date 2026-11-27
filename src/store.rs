@@ -325,6 +325,7 @@ mod tests {
                 "orderId": "ordine_test",
                 "customerId": "customer_test",
                 "customerEmail": "customer@example.test",
+                "customerName": "Test User",
                 "event": {
                     "eventId": "evt_test",
                     "sessionId": "ses_test",
@@ -393,7 +394,7 @@ mod tests {
         assert_eq!(persisted[0].meta_id, persisted[1].meta_id);
         assert!(persisted.iter().all(|ticket| ticket.status == "UNSCANNED"));
 
-        let (_,replayed) =
+        let (_, replayed) =
             crate::service::issue_tickets_from_message(payload, &repository, |_, _| async {
                 panic!("a redelivered order must reuse its existing QR codes");
             })
@@ -415,9 +416,41 @@ mod tests {
             .unwrap()
             .expect("TicketsIssued must be pending");
 
+        // Event envelope
         assert_eq!(queued["eventId"], event_id.to_string());
         assert_eq!(queued["type"], "TICKETS_ISSUED");
-        assert_eq!(queued["data"]["tickets"].as_array().unwrap().len(), 2);
+        assert_eq!(queued["version"], 1);
+        assert_eq!(queued["producer"], "tickets");
+
+        // Customer information
+        assert_eq!(queued["data"]["orderId"], "ordine_test");
+        assert_eq!(queued["data"]["customerEmail"], "customer@example.test");
+        assert_eq!(queued["data"]["customerName"], "Test User");
+
+        // Event metadata
+        assert_eq!(queued["data"]["event"]["eventTitle"], "Concerto");
+        assert_eq!(queued["data"]["event"]["startsAt"], "2026-12-10T20:00:00Z");
+        assert_eq!(queued["data"]["event"]["venueName"], "Teatro");
+        assert_eq!(queued["data"]["event"]["venueCity"], "Torino");
+
+        // Ticket information
+        let queued_tickets = queued["data"]["tickets"]
+            .as_array()
+            .expect("tickets must be an array");
+
+        assert_eq!(queued_tickets.len(), 2);
+
+        for (seat_label, sector) in [("E14", "Platea"), ("E15", "Platea")] {
+            assert!(
+                queued_tickets.iter().any(|ticket| {
+                    ticket["seatLabel"] == seat_label
+                        && ticket["sector"] == sector
+                        && ticket["ticketId"].is_string()
+                        && ticket["qrObjectKey"].is_string()
+                }),
+                "Missing ticket with seat {seat_label} and sector {sector}"
+            );
+        }
 
         repository
             .mark_tickets_issued_published(event_id)
